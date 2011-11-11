@@ -1,8 +1,8 @@
 #!/usr/bin/env ruby
 # csv_checker.rb
 
-# 20111110
-# 0.2.0
+# 20111111
+# 0.3.0
 
 $LOAD_PATH.unshift(File.expand_path(File.join(File.dirname(__FILE__), '..', 'lib')))
 
@@ -13,6 +13,25 @@ require 'SimpleCSV.rbd/SimpleCSV'
 require 'String/integerQ'
 require 'Switches'
 
+checks = [
+  {
+    :warning => Proc.new{|parsed_row| "Names cannot be less than four characters...  #{parsed_row['Name']} is only #{parsed_row['Name'].size} characters."}, 
+    :test => Proc.new{|parsed_row| parsed_row['Name'] && parsed_row['Name'].size >= 4}
+  },
+  {
+    :warning => Proc.new{|parsed_row| "The code denoting state must be in the file states.csv (ie. in the range 1..8)...  #{parsed_row['State']} is outside this range."}, 
+    :test => Proc.new{|parsed_row| parsed_row['State'].in?(state_codes)}
+  },
+  {
+    :warning => Proc.new{|parsed_row| "The salary must be an integer and not a float...  #{parsed_row['Salary']} is not an integer."}, 
+    :test => Proc.new{|parsed_row| parsed_row['Salary'] && parsed_row['Salary'].integer?}
+  },
+  {
+    :error => Proc.new{|parsed_row| "The postcode must exist...  The postcode is missing."},
+    :test => Proc.new{|parsed_row| parsed_row['Postcode'].not_nil?}
+  }
+]
+
 @switches = (
   Switches.new do |s|
     s.set :d, :data_file, :default => '../data/data.csv'
@@ -21,45 +40,14 @@ require 'Switches'
   end
 )
 
-# Names cannot be less than four characters
-def step_1(parsed_row)
-  parsed_row['Name'] && parsed_row['Name'].size >= 4
-end
-
-# The code denoting state must be in the file states.csv
-def step_2(parsed_row)
-  parsed_row['State'].in?(state_codes)
-end
-
-# The salary must be an integer and not a float
-def step_3(parsed_row)
-  parsed_row['Salary'] && parsed_row['Salary'].integer?
-end
-
-# The postcode must exist
-def step_4(parsed_row)
-  parsed_row['Postcode'].not_nil?
-end
-
-def warn(parsed_row, step)
-  @warnings << (
-    case step
-    when 1; "Warning: Names cannot be less than four characters...  #{parsed_row['Name']} is only #{parsed_row['Name'].size} characters."
-    when 2; "Warning: The code denoting state must be in the file states.csv (ie. in the range 1..8)...  #{parsed_row['State']} is outside this range."
-    when 3; "Warning: The salary must be an integer and not a float...  #{parsed_row['Salary']} is not an integer."
+def check(parsed_row, checks)
+  checks.each do |check|
+    if check[:warning] && !check[:test].call(parsed_row)
+      @warnings << check[:warning].call(parsed_row)
+    elsif check[:error] && !check[:test].call(parsed_row)
+      @errors << check[:error].call(parsed_row)
     end
-  )
-end
-
-def error(parsed_row)
-  @errors << "Error: The postcode must exist...  The postcode is missing."
-end
-
-def verify(parsed_row)
-  warn(parsed_row, 1) unless step_1(parsed_row)
-  warn(parsed_row, 2) unless step_2(parsed_row)
-  warn(parsed_row, 3) unless step_3(parsed_row)
-  error(parsed_row) unless step_4(parsed_row)
+  end
 end
 
 def state_codes
@@ -70,10 +58,10 @@ def state_codes
   )
 end
 
-def parse
+def parse(checks)
   SimpleCSV.parse(@switches.data_file, :headers => true, :row_separator => "\r\r\n").collect do |row|
     @warnings, @errors = [], []
-    verify(row)
+    check(row, checks)
     row.merge(:warnings => @warnings, :errors => @errors)
   end
 end
@@ -100,10 +88,10 @@ def output(filtered_data)
   filtered_data.each{|e| p e}
 end
 
-def main
-  parsed_data = parse
+def main(checks)
+  parsed_data = parse(checks)
   filtered_data = filter(parsed_data)
   output(filtered_data)
 end
 
-main
+main(checks)
