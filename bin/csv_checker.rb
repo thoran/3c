@@ -1,35 +1,28 @@
 #!/usr/bin/env ruby
 # csv_checker.rb
 
-# 20111112
-# 0.4.0
+# 20111117, 18
+# 0.5.0
 
-$LOAD_PATH.unshift(File.expand_path(File.join(File.dirname(__FILE__), '..', 'lib')))
+# Changes since 0.4: 
+# 1. Removed all of the core extensions used here or in config/checks.rb.  
+# 2. Moved @warnings and @errors from parse() into check(), where they should have been, and made them locals, thereby removing two effectively global instance variables.  
+# 3. Made use of a new method on SimpleCSV's eigenclass: collect(), which shortens the required amount of code quite a bit.  
 
-require 'Array/not_emptyQ'
-require 'Object/inQ'
-require 'Object/not_nilQ'
-require 'SimpleCSV.rbd/SimpleCSV'
-require 'String/integerQ'
-require 'Switches'
+require '../lib/SimpleCSV.rbd/SimpleCSV'
+require '../lib/Switches'
 
 def switches
-  @switches ||= (
-    Switches.new do |s|
-      s.set :d, :data_file, :default => '../data/data.csv'
-      s.set :s, :states_file, :default => '../data/states.csv'
-      s.set :f, :filter_type, :default => 'everything' # clean, unclean, warnings, no_warnings, errors, no_errors, everything
-      s.set :c, :checks_file, :default => '../config/checks.rb'
-    end
-  )
+  @switches ||= Switches.new do |s|
+    s.set :d, :data_file, :default => '../data/data.csv'
+    s.set :s, :states_file, :default => '../data/states.csv'
+    s.set :f, :filter_type, :default => 'everything' # clean, unclean, warnings, no_warnings, errors, no_errors, everything
+    s.set :c, :checks_file, :default => '../config/checks.rb'
+  end
 end
 
 def state_codes
-  @state_codes ||= (
-    csv_file = CSVFile.new(switches.states_file, :row_separator => "\r\r\n")
-    csv_file.columns = ['code', 'name']
-    csv_file.read.collect{|e| e['code']}
-  )
+  @state_codes ||= CSVFile.collect(switches.states_file, :row_separator => "\r\r\n", :columns => ['code', 'name']){|row| row['code']}
 end
 
 def checks
@@ -37,40 +30,31 @@ def checks
 end
 
 def check(parsed_row)
+  warnings, errors = [], []
   checks.each do |check|
     if check[:warning] && !check[:test].call(parsed_row)
-      @warnings << check[:warning].call(parsed_row)
+      warnings << check[:warning].call(parsed_row)
     elsif check[:error] && !check[:test].call(parsed_row)
-      @errors << check[:error].call(parsed_row)
+      errors << check[:error].call(parsed_row)
     end
   end
+  {:warnings => warnings, :errors => errors}
 end
 
 def parse(data_file)
-  SimpleCSV.parse(data_file, :headers => true, :row_separator => "\r\r\n").collect do |row|
-    @warnings, @errors = [], []
-    check(row)
-    row.merge(:warnings => @warnings, :errors => @errors)
-  end
+  CSVFile.collect(data_file, :headers => true, :row_separator => "\r\r\n"){|row| row.merge(check(row))}
 end
 
 def filter(parsed_data)
-  if switches.filter_type == 'clean'
-    parsed_data.select{|e| e[:warnings].empty? && e[:errors].empty?}
-  elsif switches.filter_type == 'unclean'
-    parsed_data.select{|e| e[:warnings].not_empty? || e[:errors].not_empty?}
-  elsif switches.filter_type == 'warnings'
-    parsed_data.select{|e| e[:warnings].not_empty?}
-  elsif switches.filter_type == 'no_warnings'
-    parsed_data.select{|e| e[:warnings].empty?}
-  elsif switches.filter_type == 'errors'
-    parsed_data.select{|e| e[:errors].not_empty?}
-  elsif switches.filter_type == 'no_errors'
-    parsed_data.select{|e| e[:errors].empty?}
-  elsif switches.filter_type == 'everything'
-    parsed_data
-  else
-    raise 'filter unrecognized'
+  case switches.filter_type
+  when 'clean'; parsed_data.select{|e| e[:warnings].empty? && e[:errors].empty?}
+  when 'unclean'; parsed_data.select{|e| !e[:warnings].empty? || !e[:errors].empty?}
+  when 'warnings'; parsed_data.select{|e| !e[:warnings].empty?}
+  when 'no_warnings'; parsed_data.select{|e| e[:warnings].empty?}
+  when 'errors'; parsed_data.select{|e| !e[:errors].empty?}
+  when 'no_errors'; parsed_data.select{|e| e[:errors].empty?}
+  when 'everything'; parsed_data
+  else; raise 'filter unrecognized'
   end
 end
 

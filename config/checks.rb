@@ -5,14 +5,14 @@
   },
   {
     :warning => Proc.new{|parsed_row| "The code denoting state must be in the file states.csv (ie. in the range 1..8)...  #{parsed_row['State']} is outside this range."}, 
-    :test => Proc.new{|parsed_row| parsed_row['State'].in?(state_codes)}
+    :test => Proc.new{|parsed_row| state_codes.include?(parsed_row['State'])}
   },
   {
     :warning => Proc.new{|parsed_row| "The salary must be an integer and not a float...  #{parsed_row['Salary']} is not an integer."}, 
-    :test => Proc.new{|parsed_row| parsed_row['Salary'] && parsed_row['Salary'].integer?}
+    :test => Proc.new{|parsed_row| parsed_row['Salary'] && parsed_row['Salary'] =~ /^\d+$/}
   },
   {
     :error => Proc.new{|parsed_row| "The postcode must exist...  The postcode is missing."},
-    :test => Proc.new{|parsed_row| parsed_row['Postcode'].not_nil?}
+    :test => Proc.new{|parsed_row| !parsed_row['Postcode'].nil?}
   }
 ]
