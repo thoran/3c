@@ -2,12 +2,12 @@
 # csv_checker.rb
 
 # 20111117, 18
-# 0.6.0
+# 0.7.0
 
-# Changes since 0.5: 
-# 1. check() has one less test prior to inserting a message or warning.  
-# 2. + filterer() (I had to think of a name!), which returns which filter to apply to filter.  
-# 3. ~ filter(), so as it makes use of filterer().  
+# Changes since 0.6: 
+# 1. ~filterer(), so that the filters are now located in a separate file, config/filters.rb.  
+# 2. ~filterer() to load config/filters.rb.  
+# 3. + switches.filters_file.  
 
 require '../lib/SimpleCSV.rbd/SimpleCSV'
 require '../lib/Switches'
@@ -18,6 +18,7 @@ def switches
     s.set :s, :states_file, :default => '../data/states.csv'
     s.set :f, :filter_type, :default => 'everything' # clean, unclean, warnings, no_warnings, errors, no_errors, everything
     s.set :c, :checks_file, :default => '../config/checks.rb'
+    s.set :filters_file, :default => '../config/filters.rb'
   end
 end
 
@@ -48,15 +49,10 @@ def parse(data_file)
 end
 
 def filterer
-  @filterer ||= case switches.filter_type
-  when 'clean'; Proc.new{|e| e[:warnings].empty? && e[:errors].empty?}
-  when 'unclean'; Proc.new{|e| !e[:warnings].empty? || !e[:errors].empty?}
-  when 'warnings'; Proc.new{|e| !e[:warnings].empty?}
-  when 'no_warnings'; Proc.new{|e| e[:warnings].empty?}
-  when 'errors'; Proc.new{|e| !e[:errors].empty?}
-  when 'no_errors'; Proc.new{|e| e[:errors].empty?}
-  when 'everything'; Proc.new{|e| true}
-  else; raise 'filter unrecognized'
+  @filterer ||= if (filter_found = instance_eval(File.read(switches.filters_file))[switches.filter_type.to_sym])
+    filter_found
+  else
+    raise 'filter unrecognized'
   end
 end
 
